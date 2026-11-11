@@ -1,13 +1,15 @@
 """Получение прямых зависимостей из POM без Maven и внешних библиотек."""
 
 import re
+import ssl
 import urllib.error
 import urllib.request
-import xml.etree.ElementTree as ET
-import ssl
+import xml.etree.ElementTree as etree
+from pathlib import Path
 
 TIMEOUT_SECONDS = 15
 MAX_RESOLVE_DEPTH = 5
+EXPECTED_PARTS = 3
 SKIPPED_SCOPES = {"test", "provided", "system", "import"}
 PROPERTY_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
@@ -15,7 +17,7 @@ PROPERTY_PATTERN = re.compile(r"\$\{([^}]+)\}")
 def parse_coordinates(coordinates):
     """Разделить Maven-координаты groupId:artifactId:version."""
     parts = coordinates.split(":")
-    if len(parts) != 3 or not all(parts):
+    if len(parts) != EXPECTED_PARTS or not all(parts):
         msg = "Координаты должны иметь вид groupId:artifactId:version."
         raise ValueError(msg)
     return tuple(parts)
@@ -31,27 +33,35 @@ def pom_url(coordinates, repository):
 
 
 def fetch_pom(coordinates, repository):
-    """Загрузить POM по HTTP и вернуть его XML-дерево."""
+    """Загрузить POM. Если сети нет - ищем локальный файл в data/."""
     address = pom_url(coordinates, repository)
+
+    group, artifact, version = parse_coordinates(coordinates)
+    local_filename = f"{artifact}-{version}.pom"
+    local_path = Path(__file__).parent.parent.parent / "data" / local_filename
+
+    """1. Пытаемся прочитать локальный файл (для оффлайн-демонстрации)."""
+    if local_path.is_file():
+        print(f"[*] Используется локальный POM: {local_path}")
+        return etree.fromstring(local_path.read_bytes())
+
+    """2. Если локального нет, идем в интернет."""
     request = urllib.request.Request(
         address, headers={"User-Agent": "DependencyVisualizer/1.0"}
     )
-
-    # Создаем контекст, который игнорирует проверку SSL
     context = ssl._create_unverified_context()
 
     try:
+        print(f"[*] Скачивание из сети: {address}")
         with urllib.request.urlopen(
-                request, timeout=TIMEOUT_SECONDS, context=context  # <--- Передаем context
+            request, timeout=TIMEOUT_SECONDS, context=context
         ) as response:
             content = response.read()
+        return etree.fromstring(content)
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         msg = f"Не удалось загрузить POM {address}: {error}"
         raise RuntimeError(msg) from error
-
-    try:
-        return ET.fromstring(content)
-    except ET.ParseError as error:
+    except etree.ParseError as error:
         msg = f"Некорректный XML в POM {address}: {error}"
         raise RuntimeError(msg) from error
 
@@ -111,14 +121,20 @@ def _dependency_coordinates(dependency, namespace, properties):
     values = {}
     for name in ("groupId", "artifactId", "version", "scope", "optional"):
         node = dependency.find(f"{namespace}{name}")
-        values[name] = (node.text or "").strip() if node is not None else ""
+        if node is not None:
+            values[name] = (node.text or "").strip()
+        else:
+            values[name] = ""
+
     scope = _resolve(values["scope"], properties)
     optional = _resolve(values["optional"], properties).lower()
     if scope in SKIPPED_SCOPES or optional == "true":
         return None
+
     group = _resolve(values["groupId"], properties)
     artifact = _resolve(values["artifactId"], properties)
     version = _resolve(values["version"], properties)
+
     if not group or not artifact or not version:
         return None
     return f"{group}:{artifact}:{version}"

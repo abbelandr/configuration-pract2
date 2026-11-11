@@ -2,7 +2,7 @@
 
 import sys
 import unittest
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as etree
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
@@ -19,16 +19,16 @@ class MavenTests(unittest.TestCase):
             '<project><properties><v>1.2</v></properties>'
             '<dependencies/></project>'
         )
-        xml = ET.fromstring(project_xml)
+        xml = etree.fromstring(project_xml)
         ns = _namespace(xml)
         props = _read_properties(xml, ns)
 
-        good = ET.fromstring(
+        good = etree.fromstring(
             '<dependency><groupId>org.demo</groupId>'
             '<artifactId>lib</artifactId><version>${v}</version>'
             '</dependency>'
         )
-        bad = ET.fromstring(
+        bad = etree.fromstring(
             '<dependency><groupId>org.demo</groupId>'
             '<artifactId>test-lib</artifactId><version>1</version>'
             '<scope>test</scope></dependency>'
