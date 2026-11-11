@@ -32,20 +32,15 @@ def pom_url(coordinates, repository):
     return f"{base}/{group_path}/{artifact}/{version}/{filename}"
 
 
-def fetch_pom(coordinates, repository):
-    """Загрузить POM. Если сети нет - ищем локальный файл в data/."""
-    address = pom_url(coordinates, repository)
-
-    group, artifact, version = parse_coordinates(coordinates)
+def _get_local_path(coordinates):
+    """Сформировать путь к локальному файлу POM в папке data."""
+    _, artifact, version = parse_coordinates(coordinates)
     local_filename = f"{artifact}-{version}.pom"
-    local_path = Path(__file__).parent.parent.parent / "data" / local_filename
+    return Path(__file__).parent.parent.parent / "data" / local_filename
 
-    """1. Пытаемся прочитать локальный файл (для оффлайн-демонстрации)."""
-    if local_path.is_file():
-        print(f"[*] Используется локальный POM: {local_path}")
-        return etree.fromstring(local_path.read_bytes())
 
-    """2. Если локального нет, идем в интернет."""
+def _load_network_pom(address):
+    """Скачать и распарсить POM из сети (игнорируя ошибки SSL)."""
     request = urllib.request.Request(
         address, headers={"User-Agent": "DependencyVisualizer/1.0"}
     )
@@ -64,6 +59,18 @@ def fetch_pom(coordinates, repository):
     except etree.ParseError as error:
         msg = f"Некорректный XML в POM {address}: {error}"
         raise RuntimeError(msg) from error
+
+
+def fetch_pom(coordinates, repository):
+    """Загрузить POM. Сначала проверяем локальный файл, потом сеть."""
+    address = pom_url(coordinates, repository)
+    local_path = _get_local_path(coordinates)
+
+    if local_path.is_file():
+        print(f"[*] Используется локальный POM: {local_path}")
+        return etree.fromstring(local_path.read_bytes())
+
+    return _load_network_pom(address)
 
 
 def direct_dependencies(coordinates, repository):

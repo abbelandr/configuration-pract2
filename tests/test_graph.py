@@ -12,13 +12,12 @@ from depviz.graph import build_graph, reverse_dependencies, ascii_tree
 class GraphTests(unittest.TestCase):
     """Проверки построения графа на небольших фикстурах."""
 
-    def setUp(self):
-        self.data = {
-            "A": ["B", "C"],
-            "B": ["D"],
-            "C": ["D"],
-            "D": ["A"],
-        }
+    data = {
+        "A": ["B", "C"],
+        "B": ["D"],
+        "C": ["D"],
+        "D": ["A"],
+    }
 
     def test_dfs_visits_cycle_once(self):
         """Цикл A-B-D-A не вызывает бесконечный обход."""
